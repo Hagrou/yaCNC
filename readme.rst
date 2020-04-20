@@ -128,14 +128,50 @@ sur [github](https://github.com/grbl/grbl).
 Configuration 'on-line' de GRBL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+La configuration de la CNC se trouve par tatonnement (j'ai pas trouvé
+mieux dans mon cas...). Du coup, j'ai utilisé le programme bCNC pour
+faire bouger les différents axes et la console serie de python pour
+tester les paramètres.
+
+L'idée est trouver l'ensemble des paramètres 'on-line' puis ensuite de
+les "bruler" dans une compilation (seconde partie).
+
+ .. figure:: images/bCnc-Tunning.png
+   :width: 60%
+
+Pour trouver le port usb de connexion avec l'arduino il suffit
+d'utiliser la commande python :
+
+  $ python -m serial.tools.list_ports
+
+On peut ensuite utiliser le terminal serie de python en envoyer des
+commandes
+
+    $ python -m serial.tools.miniterm /dev/ttyACM0 115200
+
+    avec:
+      - /dev/ttyACM0 : le port usb/serie de ma configuration
+      - 115200       : vitesse de transmisison serie
+
+  
 - Direction de déplacement
 
-  Il faut tout d'abord configurer le sens de déplacement des 3 axes.
+  Il faut tout d'abord configurer le sens de déplacement des 3
+  axes. Certains blogues proposent d'inverser la cablage des moteurs
+  pour obtenir le sens approprié. En fait, le paramètre $3 permet par
+  la configuration d'un masque de définir le sens de chaque
+  déplacement.
+
+  Aussi, tous les moteurs sont branchés dans le même sens. Et j'ai
+  appliqué le mask suivant pour obtenir les bons déplacements :
   
   .. figure:: images/setup-homing.png 
    :width: 60%
-  
-  $3=0 (dir port invert mask:00000000)
+	  
+  $3=4 (dir port invert mask:00000100)
+  - 00000001: déplacement -X
+  - 00000010: déplacement -Y
+  - 00000100: déplacement -Z
 
 - Homing
 
@@ -150,30 +186,100 @@ Configuration 'on-line' de GRBL
   .. figure:: images/setup-homing.png 
    :width: 60%
 
-  Etonnament, ce n'est pas le comportement par défaut de GRBL. Aussi nous devons modifier le paramètre homing-dir-invert-mask_ ($23) lui donner la valeur 7 (qui correspond à la valeur de mask:00000111) avec :
+  Etonnament, ce n'est pas le comportement par défaut de GRBL. Pour le
+  moment je préfère retrouver les origines de mes axes (?). Aussi nous
+  devons modifier le paramètre homing-dir-invert-mask_ ($23) lui
+  donner la valeur 3 (qui correspond à la valeur de mask:00000011)
+  avec :
+  
      - 00000001: recherche butée -X
      - 00000010: recherche butée -Y
      - 00000100: recherche butée -Z
 
-  Il faut également activer le mode homing cycle en affectant 1 au paramètre homing-cycle-boolean_ ($22).
+  Note : la butée en Z est placée en haut de l'axe Z afin d'éloigné l'outil
+  de la piece qui vient d'être créée.
+
+  Il faut également activer le mode homing cycle en affectant 1 au
+  paramètre homing-cycle-boolean_ ($22).
+
+- Nombre de pas / mm
+
+  Il faut définir la correspondance entre le nombre de pas du moteur
+  et la distance parcourue :
+
+  :math:`\frac{nbr\_pas * micro\_pas}{pas\_de\_vis}`
+	 
+  Dans mon cas:
   
+  - l'angle d'un pas de mon moteur est de 1.8 degree. Il faut donc 200
+    pas pour faire tour complet.
+
+  - je n'ai pas configuré les micro_pas
+    
+  - j'ai un pas de vis de 2 mm
+
+  Je dois donc entrer les valeurs : :math:`\frac{200*1}{2}=100`
+
+  ::
+
+      $100=100 (x, step/mm)
+      $101=100 (y, step/mm)
+      $102=100 (z, step/mm)
   
+- Limites de déplacement
+
+  Afin d'éviter d'emplafonner les limites de la CNC, nous allons
+  maintenant configurer les déplacement max de chaque axe.
+
+  Les coordonnées de déplacements sont affichées en exécutant la
+  commande '?' dans la console : <Idle,MPos:0.000,0.000,0.000,WPos:0.000,0.000,0.000>
+
+  On a :
+
+  - MPos:0.000,0.000,0.000
+    
+    Ce sont les coordonnés par rapport au 0 de la machine (initialisé après un homming par exemple).
+    
+  - WPos:0.000,0.000,0.000
+
+    Ce sont les coordonnées de travail, relative à MPos. Ce repère
+    sera initialisé en fonction du positionnement de la pièce à
+    réaliser.
+
+
+    $130=150.000 (x max travel, mm)
+    $131=390.000 (y max travel, mm)
+    $132=67.000 (z max travel, mm)
+
+    $20=1
+    (!) Max travel => Mpos?
+    (!) pb avec Z: -67 pas possible. Max > 0
+   https://github.com/BullzLabz/GRBL-French-wiki/blob/master/content/Configuring-Grbl-v0.9-fr.md
+    => 0z => bas mais il faut que le homming monte.
+    - Si homming => Z=0 at home
+
+    => il faut inverser le sens de Z!?
+    
 Pour cela, j'ai suivi un [tuto](https://www.cours-gratuit.com/cours-arduino/tutoriel-arduino-et-grbl-avec-cnc-shield-v3-pdf) plutot sympa.
 
-TODO:
-   Inverser Z (lire https://github.com/gnea/grbl/wiki/Grbl-v1.1-Configuration#22---homing-cycle-boolean)
-
+bCNC: https://fablabo.net/wiki/BCNC/controle
 
 Résumé
 ~~~~~~
 
 Voici l'ensemble des paramètres à appliquer :
 
-::
-   $22=1
-   $23=7
+   ::
+      
+     $3=4
+     $22=1
+     $23=3
+     $100=150 
+     $101=390 
+     $102=-67
 
 
+    
 La personnalisation se fait à partir du fichier grbl/default.h qui
 fait un include sur grbl/default/default_<CNC>.h
 #### Fichier default.h
@@ -278,6 +384,15 @@ Lancer un terminal serie :
 
     $ python -m serial.tools.miniterm /dev/ttyACM0 115200
 
+
+Notes Impression dessin
+-----------------------
+
+- Position en (0,0,0)
+  => Remonte en 2z, puis descend à -1z  (profondeur 1, déplacement sécurisé +2)
+
+
+- Limites Soft: Depend de WPOS? 
 Slicing d'une piece
 -------------------
 
