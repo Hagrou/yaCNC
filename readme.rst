@@ -169,6 +169,7 @@ commandes
    :width: 60%
 	  
   $3=4 (dir port invert mask:00000100)
+  
   - 00000001: déplacement -X
   - 00000010: déplacement -Y
   - 00000100: déplacement -Z
